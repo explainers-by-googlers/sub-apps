@@ -12,7 +12,7 @@ Under a standard Web App installation, all these modules must share a single lau
 
 The **Sub Apps API** solves this problem by allowing a single parent IWA to programmatically install, list, and remove auxiliary applications (Sub Apps) that:
 1. Appear to the OS and user as fully distinct applications (separate launcher icons, distinct taskbar/shelf windows, and individual OS integrations like protocol and file handlers).
-2. Share the underlying Signed Web Bundle resources, origin bounds, storage, permissions, and update lifecycle of the parent IWA.
+2. Share the underlying Signed Web Bundle resources, origin identification, storage, permissions, and update lifecycle of the parent IWA.
 
 This enables seamless modularity without the friction of multiple installation payloads, fragmented storage, or divergent updates.
 
@@ -27,7 +27,7 @@ This enables seamless modularity without the friction of multiple installation p
 - [Examples](#examples)
 - [Detailed Design Discussion](#detailed-design-discussion)
   - [Start URL vs. Manifest String](#start-url-vs-manifest-string)
-  - [Sub App Identity & Scope Bounds](#sub-app-identity--scope-bounds)
+  - [Sub App Identity](#sub-app-identity)
   - [Quota & Limits](#quota--limits)
 - [Considered Alternatives](#considered-alternatives)
 - [References & acknowledgements](#references--acknowledgements)
@@ -44,7 +44,7 @@ An office suite consists of an email client, a document processor, and a spreads
 
 Because Sub Apps operate inside the security perimeter of the parent IWA, they are designed with strong guardrails to prevent origin confusion and capabilities leakage.
 
-### Shared Origin Bounds
+### Shared Origin identity
 A Sub App does not possess a separate security origin. It shares the exact same origin, and local data stores (Cookies, IndexedDB, LocalStorage, and Cache Storage) with the parent IWA. Therefore, standard web security boundaries (such as the Same-Origin Policy) treat the parent and all its Sub Apps as a single entity.
 
 ### Permission and Policy Inheritance
@@ -63,33 +63,31 @@ Since developers can customize the names and icons of Sub Apps, there is a risk 
 
 ## API Design
 
-The `subApps` object is exposed on the `Window` and worker global scope:
+The `subApps` object is exposed on the `Window` interface:
 
 ```webidl
 [
   Exposed=Window,
   SecureContext,
-  ImplementedAs=SubApps,
   IsolatedContext
-] partial interface mixin WindowOrWorkerGlobalScope {
-  [SameObject, RuntimeEnabled=SubApps] readonly attribute SubApps subApps;
+] partial interface Window {
+  [SameObject] readonly attribute SubApps subApps;
 };
 
 typedef DOMString ManifestId;
 
 dictionary SubAppsListResult {
-  required DOMString app_name;
+  required DOMString appName;
 };
 
 [
   Exposed=Window,
   SecureContext,
-  RuntimeEnabled=SubApps,
   IsolatedContext
 ] interface SubApps {
-  [CallWith=ScriptState, RaisesException] sequence<Promise<ManifestId>> add(sequence<DOMString> install_urls);
-  [CallWith=ScriptState, RaisesException] sequence<Promise<ManifestId>> remove(sequence<ManifestId> manifest_ids);
-  [CallWith=ScriptState, RaisesException] Promise<record<ManifestId, SubAppsListResult>> list();
+  sequence<Promise<ManifestId>> add(sequence<DOMString> install_urls);
+  sequence<Promise<ManifestId>> remove(sequence<ManifestId> manifest_ids);
+  Promise<record<ManifestId, SubAppsListResult>> list();
 };
 ```
 
@@ -123,7 +121,7 @@ dictionary SubAppsListResult {
 - **Asynchronous Rejections**: Returns a Promise. If the operation fails due to an internal system failure, the Promise rejects with a `DOMException`:
   - `OperationError`: A generic failure occurred during the list retrieval from the underlying database.
 - **Returned Object**: The function returns a record mapping `ManifestId` to `SubAppsListResult`. This mapping (instead of a sequence/list) makes it convenient for developers to use dictionary operations on the result (e.g., to directly check if it contains a specific `manifest_id`).
-  - `SubAppsListResult.app_name` is the name of the sub-app extracted from its web manifest.
+  - `SubAppsListResult.appName` is the name of the sub-app extracted from its web manifest.
 
 ## Examples
 
@@ -182,7 +180,7 @@ async function printInstalledSubApps() {
     
     for (const [manifestId, info] of Object.entries(installedApps)) {
       console.log(`Sub App Manifest ID: ${manifestId}`);
-      console.log(`Sub App Name: ${info.app_name}`);
+      console.log(`Sub App Name: ${info.appName}`);
     }
   } catch (error) {
     console.error("Error listing sub-apps:", error);
@@ -279,7 +277,7 @@ During early API design, two distinct options were considered for defining sub-a
 
 The **Start URL** approach was chosen because it aligns natively with standard web-manifest parsing, validation. Passing raw manifest objects would require introducing custom ID generators, complex update/refresh mechanisms, and completely bypassing standard manifest security audits, creating a high maintenance and security overhead.
 
-### Sub App Identity & Scope Bounds
+### Sub App Identity
 
 Sub apps rely on standard web manifest identity fields, but enforce specific isolation and overlap rules to guarantee they do not conflict with each other or the parent application.
 
