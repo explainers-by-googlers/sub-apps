@@ -74,7 +74,7 @@ The `subApps` object is exposed on the `Window` interface:
   [SameObject] readonly attribute SubApps subApps;
 };
 
-typedef DOMString ManifestId;
+typedef USVString ManifestId;
 
 dictionary SubAppsListResult {
   required DOMString appName;
@@ -85,7 +85,7 @@ dictionary SubAppsListResult {
   SecureContext,
   IsolatedContext
 ] interface SubApps {
-  sequence<Promise<ManifestId>> add(sequence<DOMString> install_urls);
+  sequence<Promise<ManifestId>> add(sequence<USVString> install_urls);
   sequence<Promise<ManifestId>> remove(sequence<ManifestId> manifest_ids);
   Promise<record<ManifestId, SubAppsListResult>> list();
 };
@@ -93,7 +93,7 @@ dictionary SubAppsListResult {
 
 ### Detailed API Behavior
 
-#### `add(sequence<DOMString> install_urls)`
+#### `add(sequence<USVString> install_urls)`
 - **Arguments**: A sequence of relative URLs representing the start URLs of the sub-apps to be installed.
 - **Synchronous Throws**:
   - `TypeError`: If invalid URLs are passed.
