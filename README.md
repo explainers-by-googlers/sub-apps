@@ -16,9 +16,6 @@ The **Sub Apps API** solves this problem by allowing a single parent IWA to prog
 
 This enables seamless modularity without the friction of multiple installation payloads, fragmented storage, or divergent updates.
 
-## Participate
-- https://github.com/explainers-by-googlers/sub-apps/issues
-
 ## Table of Contents
 - [Background & Introduction](#background--introduction)
 - [Use cases](#use-cases)
