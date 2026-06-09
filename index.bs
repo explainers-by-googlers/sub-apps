@@ -1,17 +1,17 @@
 <pre class='metadata'>
-Title: The TODO API
-Shortname: todo
+Title: Sub Apps
+Shortname: sub-apps
 Level: None
 Status: w3c/UD
-Repository: explainers-by-googlers/todo-your-repo-name
-URL: https://explainers-by-googlers.github.io/todo-your-repo-name
-Editor: TODO: Your Name, Google https://google.com, TODO@google.com
-Abstract: TODO: A short description of your spec, one or two sentences.
+Repository: explainers-by-googlers/sub-apps
+URL: https://explainers-by-googlers.github.io/sub-apps
+Editor: Vlad Krot, Google https://google.com, vkrot@google.com
+Abstract: The Sub Apps API allows a parent Isolated Web App (IWA) to programmatically install, list, and remove auxiliary applications sharing the parent's origin, storage, and lifecycle bounds, while presenting distinct names, icons, and window identities to the operating system.
 Markup Shorthands: markdown yes, css no
 Complain About: accidental-2119 yes, missing-example-ids yes
 Assume Explicit For: yes
 Die On: warning
-WPT Path Prefix: TODO-API-LABEL
+WPT Path Prefix: sub-apps
 WPT Display: closed
 Include MDN Panels: if possible
 Include Can I Use Panels: yes
@@ -20,7 +20,7 @@ Include Can I Use Panels: yes
 Introduction {#intro}
 =====================
 
-For now, see the <a href=[REPOSITORYURL]>explainer</a>.
+For now, see the <a href="https://github.com/explainers-by-googlers/sub-apps">explainer</a>.
 
 See [https://garykac.github.io/procspec/](https://garykac.github.io/procspec/),
 [https://dlaliberte.github.io/bikeshed-intro/index.html](https://dlaliberte.github.io/bikeshed-intro/index.html),
