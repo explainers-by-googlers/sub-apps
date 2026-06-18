@@ -76,17 +76,15 @@ The `subApps` object is exposed on the `Window` interface:
   [SameObject] readonly attribute SubApps subApps;
 };
 
-typedef USVString ManifestId;
-typedef USVString InstallURL;
 
 dictionary SubAppsAddResponse {
-  record<InstallURL, ManifestId> installedApps;
-  record<InstallURL, DOMException> failedApps;
+  record<InstallPath, ManifestId> installedApps;
+  record<InstallPath, DOMException> failedApps;
 };
 
 dictionary SubAppsRemoveResponse {
-  sequence<ManifestId> removedApps;
-  record<ManifestId, DOMException> failedApps;
+  sequence<USVString> removedApps;
+  record<USVString, DOMException> failedApps;
 };
 
 dictionary SubAppsListResult {
@@ -98,40 +96,40 @@ dictionary SubAppsListResult {
   SecureContext,
   IsolatedContext
 ] interface SubApps {
-  Promise<SubAppsAddResponse> add(sequence<InstallURL> install_urls);
-  Promise<SubAppsRemoveResponse> remove(sequence<ManifestId> manifest_ids);
-  Promise<record<ManifestId, SubAppsListResult>> list();
+  Promise<SubAppsAddResponse> add(sequence<USVString> install_paths);
+  Promise<SubAppsRemoveResponse> remove(sequence<USVString> manifest_ids);
+  Promise<record<USVString, SubAppsListResult>> list();
 };
 ```
 
 ### Detailed API Behavior
 
-#### `add(sequence<USVString> install_urls)`
-- **Arguments**: A sequence of relative URLs (`InstallURL`) representing the start URLs of the sub-apps to be installed. Each install URL is the URL path to the sub-app's `index.html` that must reference a web manifest.
+#### `add(sequence<USVString> install_paths)`
+- **Arguments**: A sequence of relative paths to the sub-app's `index.html` that must reference a web manifest. Must start with '/'.
 - **Asynchronous Rejections**: Returns a Promise that resolves to a `SubAppsAddResponse`. There are no synchronous exceptions. The entire promise can be rejected with a `DOMException` for global/batch-level failures:
-  - `TypeError`: If invalid URLs are passed.
+  - `TypeError`: If invalid relative paths are passed.
   - `SecurityError`: If the `sub-apps` permissions policy is missing or not allowed.
   - `NotSupportedError`: If the API is called inside of another sub app frame.
   - `NotAllowedError`: The user declined the batch installation prompt.
   - `QuotaExceededError`: The number of sub-apps exceeds the platform limit per parent app.
   - `OperationError`: A generic failure occurred.
-- **Returned Object**: `SubAppsAddResponse` contains records mapping each input `InstallURL` provided to the call to either its success or failure state. Developers must use the `InstallURL` key to identify which call failed and which succeeded:
-  - `installedApps`: A record mapping the `InstallURL` to the successfully installed sub-app's `ManifestId`. `ManifestId` is a stable identified of a sub app, it is later used in `subApps.remove` and `subApps.list` calls. For what is `ManifestId` exactly, please, consult [Sub App identity](#sub-app-identity) section.
-  - `failedApps`: A record mapping the `InstallURL` to a `DOMException` explaining why that individual sub-app failed to install. Possible exceptions include:
+- **Returned Object**: `SubAppsAddResponse` contains records mapping each input `InstallPath` provided to the call to either its success or failure state. Developers must use the `InstallPath` key to identify which call failed and which succeeded:
+  - `installedApps`: A record mapping the `InstallPath` to the successfully installed sub-app's `ManifestId`. `ManifestId` is a stable identified of a sub app, it is later used in `subApps.remove` and `subApps.list` calls. For what is `ManifestId` exactly, please, consult [Sub App identity](#sub-app-identity) section.
+  - `failedApps`: A record mapping the `InstallPath` to a `DOMException` explaining why that individual sub-app failed to install. Possible exceptions include:
     - `ConstraintError`: Provided sub app scope web manifest property overlaps with scopes of other sub apps or the parent app or the provided install url pointed to the app web manifest (itself).
     - `DataError`: The referenced web manifest was invalid or could not be parsed.
     - `InvalidStateError`: The sub-app is already installed.
     - `OperationError`: A generic system or database failure occurred during the installation of this specific sub-app.
 
-#### `remove(sequence<ManifestId> manifest_ids)`
-- **Arguments**: A sequence of `ManifestId` values to uninstall.
+#### `remove(sequence<USVString> manifest_ids)`
+- **Arguments**: A sequence of `USVString` values to uninstall.
 - **Asynchronous Rejections**: Returns a Promise that resolves to a `SubAppsRemoveResponse`. There are no synchronous exceptions. The entire promise can be rejected with a `DOMException` for global/batch-level failures:
   - `TypeError`: If invalid URLs are provided.
   - `SecurityError`: If the `sub-apps` permissions policy is missing or not allowed.
   - `NotSupportedError`: If the API is called inside of another sub app frame.
   - `OperationError`: A generic deletion failure occurred.
-- **Returned Object**: `SubAppsRemoveResponse` contains the successfully removed IDs and records mapping any failed `ManifestId` to its failure state:
-  - `removedApps`: A sequence (`sequence<ManifestId>`) of successfully removed `ManifestId` values.
+- **Returned Object**: `SubAppsRemoveResponse` contains the successfully removed IDs and records mapping any failed `USVString` to its failure state:
+  - `removedApps`: A sequence (`sequence<USVString>`) of successfully removed `ManifestId` values.
   - `failedApps`: A record mapping the input `ManifestId` to a `DOMException` explaining why that individual sub-app failed to remove. Possible exceptions include:
     - `NotFoundError`: No sub-app with the given ID is installed under this parent IWA, it belongs to a different parent IWA, or it was already removed.
     - `OperationError`: A generic deletion failure occurred for this specific sub-app.
@@ -154,11 +152,11 @@ async function installSubApps() {
   try {
     const { installedApps, failedApps } = await window.subApps.add(["/calc", "/docs"]);
     
-    for (const [installUrl, id] of Object.entries(installedApps)) {
-      console.log(`Success: ${installUrl} -> ${id}`);
+    for (const [installPath, id] of Object.entries(installedApps)) {
+      console.log(`Success: ${installPath} -> ${id}`);
     }
-    for (const [installUrl, exception] of Object.entries(failedApps)) {
-      console.error(`Failed: ${installUrl} due to ${exception.name}`);
+    for (const [installPath, exception] of Object.entries(failedApps)) {
+      console.error(`Failed: ${installPath} due to ${exception.name}`);
     }
   } catch (error) {
     console.error("Failed to execute add call:", error);
@@ -300,12 +298,12 @@ const appIcon = (appName: string) => "data:image/jpeg;base64,..."// Base64 encod
 
 ## Detailed Design Discussion
 
-### Install URL vs. Manifest String
+### Install path vs. Manifest String
 Two distinct options were considered for defining sub-apps:
-- **Install URL (Chosen)**: Pass the `install_url` of the sub-app, which references a standard hosted/provided web manifest.
+- **Install URL (Chosen)**: Pass the `install_path` of the sub-app, which references a standard hosted/provided web manifest.
 - **Manifest String**: Feed a JSON manifest object directly as an argument to `window.subApps.add()`.
 
-The **Install URL** approach was chosen because it aligns natively with standard web-manifest parsing, validation. Passing raw manifest objects would require introducing custom ID generators, complex update/refresh mechanisms, and completely bypassing standard manifest security audits, creating a high maintenance and security overhead.
+The **Install path** approach was chosen because it aligns natively with standard web-manifest parsing, validation. Passing raw manifest objects would require introducing custom ID generators, complex update/refresh mechanisms, and completely bypassing standard manifest security audits, creating a high maintenance and security overhead.
 
 ### Returning a promise vs sequence of promises
 Two distinct options were considered for the return types of the `add()` and `remove()` methods:
