@@ -2,11 +2,12 @@
 Title: Sub Apps
 Shortname: sub-apps
 Level: None
-Status: w3c/UD
+Status: UD
+Group: wicg
 Repository: explainers-by-googlers/sub-apps
 URL: https://explainers-by-googlers.github.io/sub-apps
 Editor: Vlad Krot, Google https://google.com, vkrot@google.com
-Abstract: The Sub Apps API allows a parent Isolated Web App (IWA) to programmatically install, list, and remove auxiliary applications sharing the parent's origin, storage, and lifecycle bounds, while presenting distinct names, icons, and window identities to the operating system.
+Abstract: The Sub Apps API allows a parent application context to programmatically install, list, and remove auxiliary applications sharing the parent's origin, storage, and lifecycle bounds, while presenting distinct names, icons, and window identities to the operating system.
 Markup Shorthands: markdown yes, css no
 Complain About: accidental-2119 yes, missing-example-ids yes
 Assume Explicit For: yes
@@ -15,14 +16,225 @@ WPT Path Prefix: sub-apps
 WPT Display: closed
 Include MDN Panels: if possible
 Include Can I Use Panels: yes
+Boilerplate: conformance-tests no
+</pre>
+
+<pre class="link-defaults">
+spec:infra; type:dfn; text:map
+spec:infra; type:dfn; text:list/size
+spec:html; type:dfn; text:allowed to use
+spec:webidl; type:dfn; text:a new promise
+spec:webidl; type:dfn; text:resolve
+spec:webidl; type:dfn; text:reject
+spec:html; type:dfn; text:in parallel
+spec:html; type:dfn; text:origin
+spec:html; type:dfn; text:relevant global object
+spec:html; type:dfn; text:associated document
+spec:html; type:dfn; text:queue a global task
+spec:html; type:dfn; text:document
+spec:html; type:dfn; text:fully active
+spec:html; type:dfn; text:parse a url
 </pre>
 
 Introduction {#intro}
 =====================
 
-For now, see the <a href="https://github.com/explainers-by-googlers/sub-apps">explainer</a>.
+The Sub Apps API allows a parent application to programmatically install, list, and remove auxiliary applications (Sub Apps) that:
 
-See [https://garykac.github.io/procspec/](https://garykac.github.io/procspec/),
-[https://dlaliberte.github.io/bikeshed-intro/index.html](https://dlaliberte.github.io/bikeshed-intro/index.html),
-and [https://speced.github.io/bikeshed/](https://speced.github.io/bikeshed/) to get started on your
-specification.
+1. Appear to the operating system and user as fully distinct applications (separate launcher icons, distinct taskbar/shelf windows, and individual OS integrations).
+2. Share the underlying resources, origin identification, storage, permissions, and update lifecycle of the parent application.
+
+This API is restricted to [=isolated contexts=] to ensure security and data integrity.
+
+Extensions to the {{Window}} interface {#window-extensions}
+=======================================================
+
+<xmp class="idl">
+[Exposed=Window, SecureContext, IsolatedContext]
+partial interface Window {
+  [SameObject] readonly attribute SubApps subApps;
+};
+</xmp>
+
+## {{Window/subApps}} attribute ## {#window-subapps}
+
+When getting, the {{Window/subApps}} attribute always returns the same
+instance of the {{SubApps}} object.
+
+{{SubApps}} interface {#subapps-interface}
+==========================================
+
+<xmp class="idl">
+dictionary SubAppsAddResponse {
+  record<USVString, USVString> installedApps;
+  record<USVString, DOMException> failedApps;
+};
+
+dictionary SubAppsRemoveResponse {
+  sequence<USVString> removedApps;
+  record<USVString, DOMException> failedApps;
+};
+
+dictionary SubAppsListResult {
+  required DOMString appName;
+};
+
+[
+  Exposed=Window,
+  SecureContext,
+  IsolatedContext
+] interface SubApps {
+  Promise<SubAppsAddResponse> add(sequence<USVString> install_paths);
+  Promise<SubAppsRemoveResponse> remove(sequence<USVString> manifest_ids);
+  Promise<record<USVString, SubAppsListResult>> list();
+};
+</xmp>
+
+Each application has a primary application context (the parent app). A {{Document}} is a <dfn>sub-app document</dfn> if it is not loaded within the primary application context of the parent app.
+
+A string |path| is a <dfn>valid relative path</dfn> for a {{Document}} |document| if all of the following conditions are met:
+1. |path| is not a valid absolute URL.
+2. |path| starts with `"/"`.
+3. |path| is not empty.
+4. |path| does not start with `"//"`.
+5. The result of [=parse a url|parsing=] |path| with |document|'s [=origin=] as the base URL is not failure.
+
+## {{SubApps/add()}} method ## {#subapps-add}
+
+The {{SubApps/add(install_paths)}} method steps are:
+
+1. Let |promise| be [=a new promise=].
+2. If the [=relevant global object=]'s [=associated Document=] is not [=allowed to use=] the [=policy-controlled feature=] named "[=policy-controlled feature/sub-apps=]", [=reject=] |promise| with a "{{SecurityError}}" {{DOMException}} and return |promise|.
+3. If the [=relevant global object=]'s [=associated Document=] is a [=sub-app document=], [=reject=] |promise| with a "{{NotSupportedError}}" {{DOMException}} and return |promise|.
+4. Let |parsedUrls| be an empty list.
+5. For each |installPath| in {{SubApps/add(install_paths)/install_paths}}:
+    1. If |installPath| is not a [=valid relative path=] for the [=relevant global object=]'s [=associated Document=], [=reject=] |promise| with a "{{TypeError}}" {{DOMException}} and return |promise|.
+    2. Let |absoluteUrl| be the result of parsing |installPath| with the parent app's [=origin=] as the base URL.
+    3. If |absoluteUrl| is failure, [=reject=] |promise| with a "{{TypeError}}" {{DOMException}} and return |promise|.
+    4. Append |absoluteUrl| to |parsedUrls|.
+6. Let |parentApp| be the parent app.
+7. Let |currentSubAppsCount| be the number of sub-apps currently installed for |parentApp|.
+8. If |currentSubAppsCount| + {{SubApps/add(install_paths)/install_paths}}'s [=list/size=] is greater than 20, [=reject=] |promise| with a "{{QuotaExceededError}}" {{DOMException}} and return |promise|.
+9. Let |userConsent| be the result of requesting user consent for installing the sub-apps in {{SubApps/add(install_paths)/install_paths}} (e.g. by presenting a unified installation dialog).
+10. If |userConsent| is denied, [=reject=] |promise| with a "{{NotAllowedError}}" {{DOMException}} and return |promise|.
+11. Run the following steps [=in parallel=]:
+    1. Let |installedApps| be an empty map.
+    2. Let |failedApps| be an empty map.
+    3. For each |absoluteUrl| in |parsedUrls|:
+        1. Let |installPath| be the relative path portion of |absoluteUrl|.
+        2. Fetch the resource at |absoluteUrl| and parse its web manifest [[!APPMANIFEST]].
+        3. If fetching or parsing the web manifest fails, perform the following steps:
+            1. Add a mapping from |installPath| to a new "{{DataError}}" {{DOMException}} to |failedApps|.
+            2. Continue.
+        4. Let |manifest| be the parsed web manifest.
+        5. Let |manifestId| be |manifest|'s [=manifest/id=]. If it is not defined, fall back to |manifest|'s [=manifest/start_url=] (without reference/hash fragment).
+        6. If |parentApp| already has a sub-app with |manifestId| installed, perform the following steps:
+            1. Add a mapping from |installPath| to a new "{{InvalidStateError}}" {{DOMException}} to |failedApps|.
+            2. Continue.
+        7. If the scope of |manifest| overlaps with the scope of |parentApp|, or the scope of |manifest| overlaps with any currently installed sub-app's scope under |parentApp|, or the |absoluteUrl| points to |parentApp|'s manifest itself, perform the following steps:
+            1. Add a mapping from |installPath| to a new "{{ConstraintError}}" {{DOMException}} to |failedApps|.
+            2. Continue.
+        8. Try to install the sub-app on the platform's application launcher.
+        9. If the installation fails due to a system or database error:
+            1. Add a mapping from |installPath| to a new "{{OperationError}}" {{DOMException}} to |failedApps|.
+            2. Continue.
+        10. Add a mapping from |installPath| to |manifestId| to |installedApps|.
+    12. Let |response| be a new {{SubAppsAddResponse}} dictionary with:
+        - `installedApps` set to |installedApps|.
+        - `failedApps` set to |failedApps|.
+    13. [=Queue a global task=] on the [=relevant global object=] of [=this=] to [=resolve=] |promise| with |response|.
+12. Return |promise|.
+
+## {{SubApps/remove()}} method ## {#subapps-remove}
+
+The {{SubApps/remove(manifest_ids)}} method steps are:
+
+1. Let |promise| be [=a new promise=].
+2. If the [=relevant global object=]'s [=associated Document=] is not [=allowed to use=] the [=policy-controlled feature=] named "[=policy-controlled feature/sub-apps=]", [=reject=] |promise| with a "{{SecurityError}}" {{DOMException}} and return |promise|.
+3. If the [=relevant global object=]'s [=associated Document=] is a [=sub-app document=], [=reject=] |promise| with a "{{NotSupportedError}}" {{DOMException}} and return |promise|.
+4. Let |parsedManifestIds| be an empty list.
+5. For each |manifestId| in {{SubApps/remove(manifest_ids)/manifest_ids}}:
+    1. If |manifestId| is not a [=valid relative path=] for the [=relevant global object=]'s [=associated Document=], [=reject=] |promise| with a "{{TypeError}}" {{DOMException}} and return |promise|.
+    2. Let |parsedUrl| be the result of parsing |manifestId| with the parent app's [=origin=] as the base URL.
+    3. If |parsedUrl| is failure, [=reject=] |promise| with a "{{TypeError}}" {{DOMException}} and return |promise|.
+    4. Append |parsedUrl| to |parsedManifestIds|.
+6. Run the following steps [=in parallel=]:
+    1. Let |removedApps| be an empty sequence.
+    2. Let |failedApps| be an empty map.
+    3. For each |parsedUrl| in |parsedManifestIds|:
+        1. Let |manifestId| be the relative path portion of |parsedUrl|.
+        2. If |manifestId| does not exist under the parent app, perform the following steps:
+            - Add a mapping from |manifestId| to a new "{{NotFoundError}}" {{DOMException}} to |failedApps|.
+            - Continue.
+        3. Attempt to uninstall the sub-app with ID |manifestId| from the system launcher and registry.
+        4. If uninstallation fails due to a system error, perform the following steps:
+            - Add a mapping from |manifestId| to a new "{{OperationError}}" {{DOMException}} to |failedApps|.
+            - Continue.
+        5. Append |manifestId| to |removedApps|.
+    4. Let |response| be a new {{SubAppsRemoveResponse}} dictionary with:
+        - `removedApps` set to |removedApps|.
+        - `failedApps` set to |failedApps|.
+    5. [=Queue a global task=] on the [=relevant global object=] of [=this=] to [=resolve=] |promise| with |response|.
+7. Return |promise|.
+
+## {{SubApps/list()}} method ## {#subapps-list}
+
+The {{SubApps/list()}} method steps are:
+
+1. Let |promise| be [=a new promise=].
+2. If the [=relevant global object=]'s [=associated Document=] is not [=allowed to use=] the [=policy-controlled feature=] named "[=policy-controlled feature/sub-apps=]", [=reject=] |promise| with a "{{SecurityError}}" {{DOMException}} and return |promise|.
+3. If the [=relevant global object=]'s [=associated Document=] is a [=sub-app document=], [=reject=] |promise| with a "{{NotSupportedError}}" {{DOMException}} and return |promise|.
+4. Run the following steps [=in parallel=]:
+    1. Let |listResult| be an empty map.
+    2. Retrieve the list of all currently installed sub-apps for the parent app from the platform registry.
+    3. If retrieving the list fails due to a platform error, [=Queue a global task=] on the [=relevant global object=] of [=this=] to [=reject=] |promise| with an "{{OperationError}}" {{DOMException}}, and abort these steps.
+    4. For each installed sub-app |subApp|:
+        1. Let |manifestId| be |subApp|'s manifest ID.
+        2. Let |appName| be the name of the sub-app as extracted from its web manifest.
+        3. Let |resultEntry| be a new {{SubAppsListResult}} dictionary with `appName` set to |appName|.
+        4. Add a mapping from |manifestId| to |resultEntry| to |listResult|.
+    5. [=Queue a global task=] on the [=relevant global object=] of [=this=] to [=resolve=] |promise| with |listResult|.
+5. Return |promise|.
+
+Security and Privacy Considerations {#security-privacy}
+======================================================
+
+Installing and managing auxiliary applications is a [=powerful feature=]. A user agent MUST NOT allow a web application to install or manage sub-apps without [=express permission=].
+
+This section outlines the threats considered and the normative requirements for user agents to mitigate them.
+
+## Shared Origin Identity ## {#shared-origin}
+A sub-app does not possess a separate security origin. It shares the exact same [=origin=] and local data stores (such as Cookies, IndexedDB, LocalStorage, and Cache Storage) with its parent app. Standard web security boundaries (such as the Same-Origin Policy) treat the parent and all its sub-apps as a single entity.
+
+## Permission Inheritance ## {#permission-inheritance}
+All permissions are shared across the parent app and its sub-apps. Granting a permission (e.g., camera, file system access, USB) to a sub-app automatically grants it to the parent, and vice versa.
+
+To access the Sub Apps API, the parent app's document must explicitly declare the permission policy `sub-apps`. Permission policies declared for a sub-app have no effect.
+
+## Explicit User Consent ## {#user-consent}
+User consent MUST be obtained for a specific [=origin=]. When {{SubApps/add()}} is called, the user agent MUST present a unified installation dialog to the user displaying all requested sub-apps. If multiple sub-apps are added at once, they should be presented inside a single prompt to avoid dialog spam.
+
+The user agent MUST display a permission prompt that clearly indicates which origin is requesting access and provides the user with enough information to make an informed decision (for example, by displaying the names and icons of the sub-apps being installed).
+
+## Identity Spoofing Risks ## {#identity-spoofing}
+Since developers can customize the names and icons of sub-apps, there is a risk that a malicious application could create a sub-app that mimics system dialogs or trusted third-party applications.
+To mitigate this risk, the Sub Apps API is restricted to [=isolated contexts=], which guarantee integrity and signature verification.
+
+## OS Integration Extension Risk ## {#os-integration-risk}
+Sub-apps have the ability to register their own OS integrations (such as protocol handlers or file type associations). This means an application could potentially extend its reach into the OS far beyond what was declared in the parent app's primary manifest.
+This is mitigated by the fact that most operating system integrations require explicit user approval (for example, choosing the sub-app as the default application for a file type) before they become active.
+
+## Quota and Limits ## {#quota-limits}
+To protect the host operating system and the user's application launcher from potential exhaustion or abuse, the platform enforces a hard limit of **20 installed sub-apps** per parent application.
+If a batch installation call exceeds the platform limit, the entire {{SubApps/add()}} call rejects with a "{{QuotaExceededError}}" {{DOMException}}.
+
+Integrations {#integrations}
+============================
+
+## Permissions Policy ## {#permissions-policy}
+
+This specification defines a feature that controls whether the methods exposed by the {{Window/subApps}} attribute on the {{Window}} object may be used.
+
+The feature name for this feature is "<dfn for="policy-controlled feature" export>sub-apps</dfn>".
+
+The [=policy-controlled feature/default allowlist=] for this feature is `'self'`.
